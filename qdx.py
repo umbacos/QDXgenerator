@@ -1,59 +1,95 @@
-import argparse
+import sys
 import os
-import numpy as np
+import time
 from PIL import Image
+import numpy as np
 
-# Step 1: Parsing Command Line Arguments
-parser = argparse.ArgumentParser(description="Process PNG images in a folder.")
-parser.add_argument('layer_height', type=int, help="The layer height as an integer.")
-parser.add_argument('png_folder', type=str, help="The path to the folder containing PNG images.")
-args = parser.parse_args()
+def current_time():
+    """Return the current time in HH:MM:SS format."""
+    return time.strftime("%H:%M:%S")
 
-layer_height = args.layer_height
-png_folder = args.png_folder
+def validate_png_files(folder_path):
+    """Check that all files in the folder are PNGs with the same dimensions."""
+    png_files = [f for f in os.listdir(folder_path) if f.endswith('.png')]
+    if not png_files:
+        raise ValueError("No PNG files found in the specified folder.")
+    
+    first_image = Image.open(os.path.join(folder_path, png_files[0]))
+    first_size = first_image.size
+    for file in png_files[1:]:
+        image = Image.open(os.path.join(folder_path, file))
+        if image.size != first_size:
+            raise ValueError("PNG files have differing dimensions.")
+    return png_files, first_size
 
-# Step 2: Checking the PNG Files in the Folder
-png_files = [f for f in os.listdir(png_folder) if f.endswith('.png')]
-if not png_files:
-    raise ValueError("No PNG files found in the specified folder.")
+def process_images(png_folder, png_files, layer_height, png_dimensions):
+    """Process each PNG file and perform the required operations."""
+    main_img_size = (8000, 4000)
+    thumb_img_size = (800, 400)
+    main_img = np.zeros(main_img_size, dtype=np.uint8)
+    thumb_img = np.zeros(thumb_img_size, dtype=np.uint8)
 
-# Check dimensions
-first_image = Image.open(os.path.join(png_folder, png_files[0]))
-png_w, png_h = first_image.size
-for f in png_files[1:]:
-    with Image.open(os.path.join(png_folder, f)) as img:
-        if img.size != (png_w, png_h):
-            raise ValueError("Not all PNG images have the same dimensions.")
+    with open("qdx.qdx", "w") as qdx_file:
+        qdx_file.write(f"JieHe,{layer_height},4000,8000,2,030,0,FA\n")
+        
+        for counter, file_name in enumerate(sorted(png_files), 1):
+            print(f"{current_time()}: Processing {file_name} ({counter}/{len(png_files)})")
+            image_path = os.path.join(png_folder, file_name)
+            image = Image.open(image_path).convert("L")
+            # Scale and center the main image
+            centered_main = center_image(np.where(np.array(image) < 128, 0, 1), main_img.shape)
+            # Scale down by factor of 10 and center the thumbnail image
+            thumb_scaled = image.resize((png_dimensions[0] // 10, png_dimensions[1] // 10))
+            centered_thumb = center_image(np.where(np.array(thumb_scaled) < 128, 0, 1), thumb_img.shape)
 
-# Step 3: Creating the "qdx.qdx" File and Writing Initial Data
-with open("qdx.qdx", "w") as qdx_file:
-    qdx_file.write(f"JieHe,LH,{layer_height},8000,2,030,0,FA\n")
+            write_image_data(qdx_file, centered_main, centered_thumb, counter)
 
-# Step 4: Creating and Manipulating the Matrix
-matrix = np.zeros((4000, 8000), dtype=np.byte)
+def center_image(img_array, target_size):
+    """Center img_array within a target_size array of zeros."""
+    centered_array = np.zeros(target_size, dtype=np.uint8)
+    y_offset = (target_size[0] - img_array.shape[0]) // 2
+    x_offset = (target_size[1] - img_array.shape[1]) // 2
+    centered_array[y_offset:y_offset+img_array.shape[0], x_offset:x_offset+img_array.shape[1]] = img_array
+    return centered_array
 
-# Step 5: Processing Each PNG File
-for png_file in sorted(png_files):
-    img_path = os.path.join(png_folder, png_file)
-    with Image.open(img_path) as img:
-        img_array = np.asarray(img.convert('1')).astype(np.byte)  # Convert to black & white and then to numpy array
-        # Center the image in the matrix
-        x_offset = (8000 - png_w) // 2
-        y_offset = (4000 - png_h) // 2
-        matrix[y_offset:y_offset+png_h, x_offset:x_offset+png_w] = img_array
+def write_image_data(qdx_file, main_img, thumb_img, counter):
+    """Write the processed data of an image to the qdx file."""
+    qdx_file.write(f"{counter}\n")
+    # Thumb image processing
+    write_triplets(thumb_img, qdx_file, scale=1)
+    qdx_file.write("FB\n")
+    # Main image processing
+    write_triplets(main_img, qdx_file, scale=1)
+    qdx_file.write("FC\n")
 
-        with open("qdx.qdx", "a") as qdx_file:
-            # Step 6: Processing columns in the matrix
-            for col in range(8000):
-                last_val = matrix[0, col]
+def write_triplets(img, qdx_file, scale):
+    """Write triplets for each column change in img to qdx_file."""
+    for column in range(img.shape[1]):
+        prev_val = img[0, column]
+        count = 1
+        for row in range(1, img.shape[0]):
+            if img[row, column] == prev_val:
+                count += 1
+            else:
+                if count != img.shape[0]:
+                    qdx_file.write(f"{column//scale},{count//scale},{prev_val}\n")
+                prev_val = img[row, column]
                 count = 1
-                for row in range(1, 4000):
-                    if matrix[row, col] == last_val:
-                        count += 1
-                    else:
-                        qdx_file.write(f"{col},{count},{last_val}\n")
-                        count = 1
-                        last_val = matrix[row, col]
-                # For the last segment in each column
-                qdx_file.write(f"{col},{count},{last_val}\n")
-            qdx_file.write("FB\n")
+        # Process the last segment
+        if count != img.shape[0]:
+            qdx_file.write(f"{column//scale},{count//scale},{prev_val}\n")
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        print("Usage: script.py <layer_height> <png_folder>")
+        sys.exit(1)
+
+    layer_height = int(sys.argv[1])
+    png_folder = sys.argv[2]
+
+    try:
+        png_files, png_dimensions = validate_png_files(png_folder)
+        process_images(png_folder, png_files, layer_height, png_dimensions)
+        print(f"{current_time()}: Successfully processed all images.")
+    except Exception as e:
+        print(f"Error: {e}")
