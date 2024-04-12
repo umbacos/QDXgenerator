@@ -4,12 +4,15 @@ import time
 from PIL import Image
 import numpy as np
 
+def vlog(text):
+    print(f"{current_time()}: {text}")
+
 def current_time():
     """Return the current time in HH:MM:SS format."""
     return time.strftime("%H:%M:%S")
 
 def validate_png_files(folder_path):
-    """Check that all files in the folder are PNGs with the same dimensions."""
+    vlog("Check that all files in the folder are PNGs with the same dimensions.")
     png_files = [f for f in os.listdir(folder_path) if f.endswith('.png')]
     if not png_files:
         raise ValueError("No PNG files found in the specified folder.")
@@ -23,9 +26,9 @@ def validate_png_files(folder_path):
     return png_files, first_size
 
 def process_images(png_folder, png_files, layer_height, png_dimensions):
-    """Process each PNG file and perform the required operations."""
-    main_img_size = (8000, 4000)
-    thumb_img_size = (800, 400)
+    vlog("Process each PNG file and perform the required operations.")
+    main_img_size = (4000,8000)
+    thumb_img_size = (400, 800)
     main_img = np.zeros(main_img_size, dtype=np.uint8)
     thumb_img = np.zeros(thumb_img_size, dtype=np.uint8)
 
@@ -33,7 +36,7 @@ def process_images(png_folder, png_files, layer_height, png_dimensions):
         qdx_file.write(f"JieHe,{layer_height},4000,8000,2,030,0,FA\n")
         
         for counter, file_name in enumerate(sorted(png_files), 1):
-            print(f"{current_time()}: Processing {file_name} ({counter}/{len(png_files)})")
+            vlog("Processing {file_name} ({counter}/{len(png_files)})")
             image_path = os.path.join(png_folder, file_name)
             image = Image.open(image_path).convert("L")
             # Scale and center the main image
@@ -44,8 +47,12 @@ def process_images(png_folder, png_files, layer_height, png_dimensions):
 
             write_image_data(qdx_file, centered_main, centered_thumb, counter)
 
+        qdx_file.write("FD\n")
+        qdx_file.write(f"{counter}|1234\n")
+
+
 def center_image(img_array, target_size):
-    """Center img_array within a target_size array of zeros."""
+    vlog("Center img_array within a target_size array of zeros.")
     centered_array = np.zeros(target_size, dtype=np.uint8)
     y_offset = (target_size[0] - img_array.shape[0]) // 2
     x_offset = (target_size[1] - img_array.shape[1]) // 2
@@ -53,17 +60,18 @@ def center_image(img_array, target_size):
     return centered_array
 
 def write_image_data(qdx_file, main_img, thumb_img, counter):
-    """Write the processed data of an image to the qdx file."""
+    vlog("Write the processed data of an image to the qdx file.")
     qdx_file.write(f"{counter}\n")
     # Thumb image processing
-    write_triplets(thumb_img, qdx_file, scale=1)
+    write_triplets(thumb_img, qdx_file)
     qdx_file.write("FB\n")
     # Main image processing
-    write_triplets(main_img, qdx_file, scale=1)
+    write_triplets(main_img, qdx_file)
     qdx_file.write("FC\n")
+    vlog("done")
 
-def write_triplets(img, qdx_file, scale):
-    """Write triplets for each column change in img to qdx_file."""
+def write_triplets(img, qdx_file):
+    vlog("Write triplets for each column change in img to qdx_file.")
     for column in range(img.shape[1]):
         prev_val = img[0, column]
         count = 1
@@ -72,12 +80,13 @@ def write_triplets(img, qdx_file, scale):
                 count += 1
             else:
                 if count != img.shape[0]:
-                    qdx_file.write(f"{column//scale},{count//scale},{prev_val}\n")
+                    qdx_file.write(f"{column},{count},{prev_val}\n")
                 prev_val = img[row, column]
                 count = 1
         # Process the last segment
         if count != img.shape[0]:
-            qdx_file.write(f"{column//scale},{count//scale},{prev_val}\n")
+            qdx_file.write(f"{column},{count},{prev_val}\n")
+    vlog("done.")
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
@@ -90,6 +99,6 @@ if __name__ == "__main__":
     try:
         png_files, png_dimensions = validate_png_files(png_folder)
         process_images(png_folder, png_files, layer_height, png_dimensions)
-        print(f"{current_time()}: Successfully processed all images.")
+        vlog("Successfully processed all images.")
     except Exception as e:
         print(f"Error: {e}")
