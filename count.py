@@ -1,11 +1,10 @@
 import sys
-import os
 import shutil
 import time
+import os
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
-
-from moviepy.editor import concatenate_videoclips, ImageClip
+from pathlib import Path
 
 #################################################
 #
@@ -25,9 +24,6 @@ from moviepy.editor import concatenate_videoclips, ImageClip
 #
 ################################################# 
 
-
-# temporary directory path for the video frames
-dir_path = "_layers"
 max_frames = 50*400
 # Record the start time
 start_time = time.time()
@@ -36,21 +32,36 @@ LH, X, Y = 50, 4000, 8000                               # Expected values for Ga
 expected_header = f"JieHe,{LH},{X},{Y},2,030,0,FA"      # Galaxy 1
 
 def vlog(msg):
-    print(f"{datetime.fromtimestamp(time.time()-start_time).strftime('%H:%M:%S')} - {msg}")
+  #Prints timestamp and text
+  print(f"{datetime.fromtimestamp(time.time()-start_time).strftime('%H:%M:%S')} - {msg}")
+
+def create_video_from_images(image_dir, video_path, fps=24):
+  """Creates a video from a directory of images.
+     REQUIRES FFMPEG (winget install winget)
+  """
+  vlog(f"Start video creation: {video_path}")
+
+  image_pattern = os.path.join(image_dir, "layer%d.png")  # Pattern with padding
+  command = f"ffmpeg -framerate {fps} -i {image_pattern} -c:v libx264 {video_path}"
+  vlog(command)
+  os.system(command)
+
+  vlog(f"Video created successfully: {video_path}")
+
 
 def validate_file_structure(filename):
     try:
         vlog("Opening and reading the file...")
         with open(filename, 'r') as file:
-            lines = file.readlines()
+            first_line = file.readline()
 
             # Validate header
             vlog("Validating header...")
-            header = lines[0].strip()
+            header = first_line.strip()
             if header == expected_header:
-                vlog(f"Header is compliant: LH={LH}, X={X}, Y={Y}")
+                vlog(f"Header is compliant: found {header}")
             else:
-                vlog(f"Header compliance failed: found LH={header_parts[1]}, X={header_parts[2]}, Y={header_parts[3]}")
+                vlog(f"!!! Header compliance failed: found {header}")
 
             # Check if the directory exists
             if os.path.exists(dir_path):
@@ -61,7 +72,7 @@ def validate_file_structure(filename):
             os.makedirs(dir_path, exist_ok=True)
 
             if max_frames > 0:
-                vlog("Initialize the video clip")
+                vlog("Initialize the frame buffer")
                 # Create an empty (black) image
                 img = Image.new('RGB', (Y, X), 'black')
                 draw = ImageDraw.Draw(img)
@@ -71,29 +82,27 @@ def validate_file_structure(filename):
 
             layer_count = 0
             current_layer = 0
-            row_displacements = {}
             in_image = False
-
-            for line in lines[1:]:
+            
+            for line in file:
                 line = line.strip()
 
                 if line.isdigit():
                     current_layer = int(line)
+                    if current_layer == max_frames:
+                        break
                     layer_count += 1
                     if layer_count != current_layer:
-                            vlog(f"Error in layer {current_layer}: layer number doesn't match the sequence {layer_count}")
-                    row_displacements = {}
+                        vlog(f"Error in layer {current_layer}: layer number doesn't match the sequence {layer_count}")
+                    last_displacement = 0
                     vlog(f"Processing layer {current_layer}...")
                 
                 elif line == "FB":
-                    # Checking the thumbnail data between the layer number line and the "FB" line
-                    for row, displacement in row_displacements.items():
-                        if displacement != X // 10:
-                            vlog(f"Error in layer {current_layer}, thumbnail row {row}: sum of displacements is {displacement}, expected {X // 10}.")
-                    row_displacements = {}
+                    last_row = 0
+                    last_displacement = 0
 
                     if current_layer < max_frames:
-                        # Clear the video frame (fill it with black)
+                        # Clear the frame (fill it with black)
                         draw.rectangle([(0, 0), (Y, X)], fill='black')
 
                     # Start the analysis of the layer image data between "FB" and "FC"
@@ -102,22 +111,11 @@ def validate_file_structure(filename):
                 elif line == "FC":
                     in_image = False
 
-                    # Checking the layer image data between the "FB" line and "FC"
-                    for row, displacement in row_displacements.items():
-                        if displacement != X:
-                            vlog(f"Error in layer {current_layer}, image row {row}: sum of displacements is {displacement}, expected {X}.")
-
                     if current_layer < max_frames:
                         # Save the temporary clip frame to file - to be optimized
-                        draw.text((5, 5), f"{current_layer}", fill="white", font=font)
+                        draw.text((5, 5), f"{current_layer + 1}", fill="white", font=font)
                         temp_image_path = f"{dir_path}\\layer{current_layer}.png"
                         img.save(temp_image_path)
-                        # Create a video clip frame from the image with a duration of 0.2 seconds
-                        clip = ImageClip(temp_image_path).set_duration(0.2)
-                        # Append the clip to the list of video clips
-                        video_clips.append(clip)
-
-                    row_displacements = {}
  
                 elif line == "FD":
                     break  # Recap section starts, stop processing
@@ -125,48 +123,49 @@ def validate_file_structure(filename):
                 else:
                     # Data line processing
                     parts = line.split(',')
-                    if len(parts) == 3:  # Row data line
+                    if len(parts) == 3 and in_image:  # Row data line
                         row, displacement, laser_on = map(int, parts)
-                        rd = row_displacements.get(row, 0)
 
-                        if current_layer < max_frames:
+                        if current_layer < max_frames and in_image:
                             # Draw the actual line on the clip frame, red if there is an error
-                            if in_image: 
-                                rd_to = rd + displacement
-                                if rd_to <= X:
-                                    to_fill = "white"
+                            if row != last_row:
+                                last_displacement = 0
+                            rd_to = last_displacement + displacement
+
+                            if rd_to <= X:
+                                to_fill = "white"
+                            else:
+                                vlog(f"Error in layer {current_layer}: row {row} exceeds limits. Laser X gets up to {rd_to}")
+                                to_fill = "red"
+                                rd_to = X
+                                laser_on = 1
+                            if laser_on == 1:
+                                if current_layer %2 == 1:
+                                    draw.line((row, last_displacement, row, rd_to), fill=to_fill)
                                 else:
-                                    to_fill = "red"
-                                    rd_to = X
-                                    laser_on = 1
-                                if laser_on == 1:
-                                    if current_layer %2 == 1:
-                                        draw.line((row, rd, row, rd_to), fill=to_fill)
-                                    else:
-                                        draw.line((Y - row, rd, Y - row, rd_to), fill=to_fill)
-                        row_displacements[row] = rd + displacement
+                                    draw.line((Y - row, last_displacement, Y - row, rd_to), fill=to_fill)
+                            last_row = row 
+                            last_displacement = rd_to
 
             # Validate recap section, reading the last line of the file
-            recap = lines[-1].strip().split('|')
-            total_layers_reported = int(recap[0])
-            vlog("Validating recap section...")
-            if layer_count == total_layers_reported:
-                vlog(f"Recap is compliant: found {layer_count} layers, expected {total_layers_reported}.")
-            else:
-                vlog(f"Recap compliance failed: found {layer_count} layers, expected {total_layers_reported}.")
+            recap = file.readline().strip().split('|')
+            if len(parts) == 2:
+                total_layers_reported = int(recap[0])
+                vlog("Validating recap section...")
+                if layer_count == total_layers_reported:
+                    vlog(f"Recap is compliant: found {layer_count} layers, expected {total_layers_reported}.")
+                else:
+                    vlog(f"Recap compliance failed: found {layer_count} layers, expected {total_layers_reported}.")
 
             if max_frames > 0:
-                vlog("Concatenate frames video file...")
-                final_clip = concatenate_videoclips(video_clips, method='compose')
-
-                vlog("Save video file...")
-                final_clip.write_videofile("render.mp4", fps=24)
-
+                create_video_from_images(dir_path, f"{dir_path}.mp4")
+                """
                 vlog("Clean up...")
                 if os.path.exists(dir_path):
                     # Remove all contents of the directory
                     shutil.rmtree(dir_path)
-    
+                """
+
     except FileNotFoundError:
         vlog(f"Error: The file '{filename}' was not found.")
 
@@ -177,5 +176,6 @@ if __name__ == "__main__":
 
     vlog("Start...")
     filename = sys.argv[1]
+    dir_path = Path(filename).stem 
     validate_file_structure(filename)
     vlog("Finished")
