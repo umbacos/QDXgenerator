@@ -77,8 +77,6 @@ def validate_file_structure(filename):
                 img = Image.new('RGB', (Y, X), 'black')
                 draw = ImageDraw.Draw(img)
                 font = ImageFont.truetype('arial.ttf', 200)
-                # Initialize an empty list to hold each frame as a video clip
-                video_clips = []
 
             layer_count = 0
             current_layer = 0
@@ -94,7 +92,6 @@ def validate_file_structure(filename):
                     layer_count += 1
                     if layer_count != current_layer:
                         vlog(f"Error in layer {current_layer}: layer number doesn't match the sequence {layer_count}")
-                    last_displacement = 0
                     vlog(f"Processing layer {current_layer}...")
                 
                 elif line == "FB":
@@ -102,7 +99,7 @@ def validate_file_structure(filename):
                     last_displacement = 0
 
                     if current_layer < max_frames:
-                        # Clear the frame (fill it with black)
+                        # Clear the frame (fill it with black)")
                         draw.rectangle([(0, 0), (Y, X)], fill='black')
 
                     # Start the analysis of the layer image data between "FB" and "FC"
@@ -116,6 +113,8 @@ def validate_file_structure(filename):
                         draw.text((5, 5), f"{current_layer + 1}", fill="white", font=font)
                         temp_image_path = f"{dir_path}\\layer{current_layer}.png"
                         img.save(temp_image_path)
+                    else:
+                        break
  
                 elif line == "FD":
                     break  # Recap section starts, stop processing
