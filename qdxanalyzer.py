@@ -120,7 +120,7 @@ def read_parameters(argv):
 
     return filename, start_layer, end_layer, do_video, do_pictures
 
-def validate_file_structure(filename, start_layer, end_layer, do_video, do_pictures):
+def main(filename, start_layer, end_layer, do_video, do_pictures):
     
     visuals = do_pictures or do_video    # only if needed, we will creates and manage the frame buffer
     dir_path, _ = os.path.splitext(filename)         
@@ -296,5 +296,5 @@ if __name__ == "__main__":
 
     # Start the analysis
     vlog(f"Start analisys")
-    validate_file_structure(*read_parameters(sys.argv))
+    main(*read_parameters(sys.argv))
     vlog("Finished")
