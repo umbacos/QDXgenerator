@@ -51,11 +51,11 @@ def vlog(msg):
   print(f"{datetime.fromtimestamp(time.time()-start_time).strftime('%H:%M:%S')} - {msg}")
 
 # Draw a vertical line in the frame buffer
-def draw_segment(current_layer, image, row, segment_start, segment_end, color):                                
+def draw_segment(current_layer, frame_buffer, row, segment_start, segment_end, color):                                
     if current_layer %2 == 1: # Every other layer is mirrored
-        cv2.line(image, (row, segment_start), (row, segment_end), color, 1)
+        cv2.line(frame_buffer, (row, segment_start), (row, segment_end), color, 1)
     else:
-        cv2.line(image, (Y - row, segment_start), (Y - row, segment_end), color, 1)
+        cv2.line(frame_buffer, (Y - row, segment_start), (Y - row, segment_end), color, 1)
 
 def read_parameters(argv):
     if len(argv) < 2:
@@ -98,9 +98,9 @@ def read_parameters(argv):
         
     # if not start end are provided on the command line, do the entire file
     if end_layer == 0:
-        end_layer == Z    
+        end_layer = Z    
     if start_layer == 0:
-        start_layer == 1
+        start_layer = 1
     
     print(f"Running {sys.argv[0]} with the following parameters:")
     print(f"   Input file:   {filename}")
@@ -132,7 +132,7 @@ def validate_file_structure(filename, start_layer, end_layer, do_video, do_pictu
     if visuals:
         vlog("Initialize the frame buffer")
         # Create an empty (black) image
-        image = np.zeros((X, Y, 3), dtype=np.uint8)
+        frame_buffer = np.zeros((X, Y, 3), dtype=np.uint8)
 
     layer_count = 0
     current_layer = 0
@@ -180,7 +180,7 @@ def validate_file_structure(filename, start_layer, end_layer, do_video, do_pictu
                     error_flag = False
                     # Clear the frame buffer (fill it with black)
                     if visuals:
-                        image[:] = [0, 0, 0]
+                        frame_buffer[:] = [0, 0, 0]
                     # Progress bar visualization (done once per layer)
                     if current_layer % 50:
                         i = current_layer % 50 + 1
@@ -203,13 +203,13 @@ def validate_file_structure(filename, start_layer, end_layer, do_video, do_pictu
                     error_flag = False
                 if visuals:
                     # Stamp the layer number on the frame
-                    cv2.putText(image, f"{current_layer}", (100,300), cv2.FONT_HERSHEY_SIMPLEX, 10, (255,255,255), 20)
+                    cv2.putText(frame_buffer, f"{current_layer}", (100,300), cv2.FONT_HERSHEY_SIMPLEX, 10, (255,255,255), 20)
                     if do_pictures:
                         # Dump the image in the directory
-                        cv2.imwrite(f"{dir_path}/layer{current_layer}.png", image)
+                        cv2.imwrite(f"{dir_path}/layer{current_layer}.png", frame_buffer)
                     if do_video:
                         # add the frame to the video
-                        out.write(image)
+                        out.write(frame_buffer)
 
             # Reached end of the file, exit the loop
             elif line == "FD":
@@ -229,7 +229,7 @@ def validate_file_structure(filename, start_layer, end_layer, do_video, do_pictu
                             print(f"\nError in layer {current_layer}: row {row} is too short. Laser X gets up to {segment_end}")
                             error_flag = True
                             if visuals:
-                                draw_segment(current_layer, image, last_row, segment_start, X, c_red)
+                                draw_segment(current_layer, frame_buffer, last_row, segment_start, X, c_red)
                         # Reset parameters for the new line
                         segment_start = 0
                     
@@ -241,11 +241,11 @@ def validate_file_structure(filename, start_layer, end_layer, do_video, do_pictu
                         print(f"\nError in layer {current_layer}: row {row} exceeds limits. Laser X gets up to {segment_end}")
                         error_flag = True
                         if visuals:
-                            draw_segment(current_layer, image, row, segment_start, X, c_red)
+                            draw_segment(current_layer, frame_buffer, row, segment_start, X, c_red)
                     else:
                         # Draw the line if the laser is on
                         if visuals and laser_on == 1:
-                            draw_segment(current_layer, image, row, segment_start, segment_end, c_white)
+                            draw_segment(current_layer, frame_buffer, row, segment_start, segment_end, c_white)
 
                     last_row = row 
                     segment_start = segment_end
