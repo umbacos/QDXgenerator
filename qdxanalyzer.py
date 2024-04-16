@@ -106,7 +106,12 @@ def read_parameters(argv):
             while file.read(1) != b'\n':
                 file.seek(-2, os.SEEK_CUR)
             # Read and return the last line
-            end_layer = int(file.readline().decode().split("|")[0])
+            last_line = file.readline().decode()
+            if "|" in last_line:
+                end_layer = int(last_line.split("|")[0])
+            else:
+                vlog("Error: missing last line of the file with the total layer number!!!")
+                end_layer = 8000
 
     if start_layer == 0:
         start_layer = 1
