@@ -96,9 +96,18 @@ def read_parameters(argv):
     if filename == "":
         help()     
         
-    # if not start end are provided on the command line, do the entire file
+    # If no end layer is provided on the command line, do the entire file
+    # Read the total number of layers from the last line in the file
     if end_layer == 0:
-        end_layer = Z    
+        with open(filename, 'rb') as file:
+            # Move the cursor to the second to last byte of the file
+            file.seek(-2, os.SEEK_END)
+            # Keep moving backwards until we find a newline character
+            while file.read(1) != b'\n':
+                file.seek(-2, os.SEEK_CUR)
+            # Read and return the last line
+            end_layer = int(file.readline().decode().split("|")[0])
+
     if start_layer == 0:
         start_layer = 1
     
