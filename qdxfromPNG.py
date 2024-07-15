@@ -48,7 +48,7 @@ def process_images(png_folder, png_files, layer_height, png_dimensions):
             write_image_data(qdx_file, centered_main, centered_thumb, counter)
 
         qdx_file.write("FD\n")
-        qdx_file.write(f"{counter}|1234\n")
+        qdx_file.write(f"{counter}|{triplets + counter * 2}}\n")
 
 
 def center_image(img_array, target_size):
@@ -59,18 +59,18 @@ def center_image(img_array, target_size):
     centered_array[y_offset:y_offset+img_array.shape[0], x_offset:x_offset+img_array.shape[1]] = img_array
     return centered_array
 
-def write_image_data(qdx_file, main_img, thumb_img, counter):
+def write_image_data(qdx_file, main_img, thumb_img, counter, triplets):
     vlog("Write the processed data of an image to the qdx file.")
     qdx_file.write(f"{counter}\n")
     # Thumb image processing
-    write_triplets(thumb_img, qdx_file)
+    write_triplets(thumb_img, qdx_file, triplets)
     qdx_file.write("FB\n")
     # Main image processing
-    write_triplets(main_img, qdx_file)
+    write_triplets(main_img, qdx_file, triplets)
     qdx_file.write("FC\n")
     vlog("done")
 
-def write_triplets(img, qdx_file):
+def write_triplets(img, qdx_file, triplets):
     vlog("Write triplets for each column change in img to qdx_file.")
     for column in range(img.shape[1]):
         prev_val = img[0, column]
@@ -81,11 +81,13 @@ def write_triplets(img, qdx_file):
             else:
                 if count != img.shape[0]:
                     qdx_file.write(f"{column},{count},{prev_val}\n")
+                    triplets = triplets + 1
                 prev_val = img[row, column]
                 count = 1
         # Process the last segment
         if count != img.shape[0]:
             qdx_file.write(f"{column},{count},{prev_val}\n")
+            triplets = triplets + 1
     vlog("done.")
 
 if __name__ == "__main__":
