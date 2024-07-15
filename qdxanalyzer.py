@@ -21,7 +21,7 @@ from datetime import datetime
 #      int triplets (row, displacement, laser_on)
 #   separator:        "FC"
 #   separator:        "FD"
-#   recap data:     total_layer_number|???
+#   recap data:     total_layer_number|total triplets + twice total_layer_number
 #
 ################################################# 
 
@@ -62,7 +62,7 @@ def read_parameters(argv):
         help()
 
     filename = ""
-    start_layer = end_layer = 0
+    start_layer = end_layer =   magic_number = triplets = 0
     do_video = do_pictures = visuals = False
 
     # Read command line parameters:
@@ -109,6 +109,7 @@ def read_parameters(argv):
             last_line = file.readline().decode()
             if "|" in last_line:
                 end_layer = int(last_line.split("|")[0])
+                magic_number = int(last_line.split("|")[1])
             else:
                 vlog("Error: missing last line of the file with the total layer number!!!")
                 end_layer = 8000
@@ -120,12 +121,13 @@ def read_parameters(argv):
     print(f"   Input file:   {filename}")
     print(f"   Start layer:  {start_layer}")
     print(f"   End layer:    {end_layer}")
+    print(f"   Magic Number: {magic_number}")
     print(f"   Create images:{"yes" if do_pictures else "no"}")
     print(f"   Create video: {"yes" if do_video else "no"}")
 
-    return filename, start_layer, end_layer, do_video, do_pictures
+    return filename, start_layer, end_layer, do_video, do_pictures, magic_number, triplets
 
-def main(filename, start_layer, end_layer, do_video, do_pictures):
+def main(filename, start_layer, end_layer, do_video, do_pictures, magic_number, triplets):
     
     visuals = do_pictures or do_video    # only if needed, we will creates and manage the frame buffer
     dir_path, _ = os.path.splitext(filename)         
@@ -230,39 +232,41 @@ def main(filename, start_layer, end_layer, do_video, do_pictures):
                 break
 
             # Core layer processing (we are between FB and FC)
-            elif in_layer:
-                # Split the data triplet in the line
-                parts = line.split(',')
-                if len(parts) == 3:  # segment data line
-                    row, segment_length, laser_on = map(int, parts)
+            else:
+                triplets = triplets + 1
+                if in_layer:
+                    # Split the data triplet in the line
+                    parts = line.split(',')
+                    if len(parts) == 3:  # segment data line
+                        row, segment_length, laser_on = map(int, parts)
 
-                    # If this is a new Y row
-                    if row != last_row:
-                        # Check if the previous Y segment was too short
-                        if segment_end < X:
-                            print(f"\nError in layer {current_layer}: row {row} is too short. Laser X gets up to {segment_end}")
+                        # If this is a new Y row
+                        if row != last_row:
+                            # Check if the previous Y segment was too short
+                            if segment_end < X:
+                                print(f"\nError in layer {current_layer}: row {row} is too short. Laser X gets up to {segment_end}")
+                                error_flag = True
+                                if visuals:
+                                    draw_segment(current_layer, frame_buffer, last_row, segment_start, X, c_red)
+                            # Reset parameters for the new line
+                            segment_start = 0
+                        
+                        # X coordinate end of the segment to draw
+                        segment_end = segment_start + segment_length
+
+                        if segment_end > X:
+                            # Segment exceeds X maximum value?
+                            print(f"\nError in layer {current_layer}: row {row} exceeds limits. Laser X gets up to {segment_end}")
                             error_flag = True
                             if visuals:
-                                draw_segment(current_layer, frame_buffer, last_row, segment_start, X, c_red)
-                        # Reset parameters for the new line
-                        segment_start = 0
-                    
-                    # X coordinate end of the segment to draw
-                    segment_end = segment_start + segment_length
+                                draw_segment(current_layer, frame_buffer, row, segment_start, X, c_red)
+                        else:
+                            # Draw the line if the laser is on
+                            if visuals and laser_on == 1:
+                                draw_segment(current_layer, frame_buffer, row, segment_start, segment_end, c_white)
 
-                    if segment_end > X:
-                        # Segment exceeds X maximum value?
-                        print(f"\nError in layer {current_layer}: row {row} exceeds limits. Laser X gets up to {segment_end}")
-                        error_flag = True
-                        if visuals:
-                            draw_segment(current_layer, frame_buffer, row, segment_start, X, c_red)
-                    else:
-                        # Draw the line if the laser is on
-                        if visuals and laser_on == 1:
-                            draw_segment(current_layer, frame_buffer, row, segment_start, segment_end, c_white)
-
-                    last_row = row 
-                    segment_start = segment_end
+                        last_row = row 
+                        segment_start = segment_end
 
         # We reached the end of the analysis, so we clean up the progress bar
         if '|' in line:
@@ -289,6 +293,11 @@ def main(filename, start_layer, end_layer, do_video, do_pictures):
                     vlog(f"Recap is compliant: found {layer_count} layers, expected {total_layers_reported}.")
                 else:
                     vlog(f"Recap compliance failed: found {layer_count} layers, expected {total_layers_reported}.")
+                if (triplets + 2 * layer_count) == magic_number:
+                    vlog(f"Magic Number is compliant: found {triplets + 2 * layer_count} layers, expected {magic_number}.")
+                else:
+                    vlog(f"Magic Number is failed: found {triplets + 2 * layer_count} layers, expected {magic_number}.")
+
 
         # Wrap up
         if do_video:
