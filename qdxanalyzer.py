@@ -283,20 +283,17 @@ def main(filename, start_layer, end_layer, do_video, do_pictures, magic_number, 
         else:
             vlog("No errors found in the layers")
 
+        vlog(f"current line {line}")
         # In case we reached the actual end of the file, let's process also the last line with the total number of layers
-        if '|' in line:
-            recap = line.split('|')
-            if len(recap) == 2:
-                total_layers_reported = int(recap[0])
-                vlog("Validating recap section...")
-                if layer_count == total_layers_reported:
-                    vlog(f"Recap is compliant: found {layer_count} layers, expected {total_layers_reported}.")
-                else:
-                    vlog(f"Recap compliance failed: found {layer_count} layers, expected {total_layers_reported}.")
-                if (triplets + 2 * layer_count) == magic_number:
-                    vlog(f"Magic Number is compliant: found {triplets + 2 * layer_count} layers, expected {magic_number}.")
-                else:
-                    vlog(f"Magic Number is failed: found {triplets + 2 * layer_count} layers, expected {magic_number}.")
+        vlog("Validating recap section...")
+        if layer_count == end_layer:
+            vlog(f"Recap is compliant: found {layer_count} layers, as expected.")
+        else:
+            vlog(f"Recap compliance failed: found {layer_count} layers, expected {end_layer}.")
+        if (triplets + 2 * layer_count) == magic_number:
+            vlog(f"Magic Number is compliant: calculated {triplets + 2 * layer_count}, as expected.")
+        else:
+            vlog(f"Magic Number is failed: calculated {triplets + 2 * layer_count}, expected {magic_number}.")
 
 
         # Wrap up

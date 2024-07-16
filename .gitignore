@@ -2,3 +2,6 @@
 /*/
 *.qdx
 *.mp4
+qdxfromPNG.cmd
+qdx.qdx
+*.exe
